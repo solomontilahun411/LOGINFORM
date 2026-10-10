@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f4f6fb">
+  <title>Welcome | Account access</title>
+  <link rel="stylesheet" href="login.css">
+  <script src="login.js" defer></script>
+</head>
+<body>
+  <main class="page">
+    <section class="card" aria-labelledby="form-title">
+      <div class="brand-mark" aria-hidden="true"><img class="brand-logo" src="logo.png" alt="Solomon Dev logo" width="64" height="64">
+</div>
+      <p class="eyebrow">YOUR ACCOUNT</p>
+      <h1 id="form-title">Welcome back</h1>
+      <p class="intro" id="form-intro">Enter your details to sign in to your account.</p>
+
+      <form id="login-form" class="account-form" novalidate>
+        <div class="field">
+          <label for="login-email">Email address</label>
+          <input id="login-email" name="email" type="email" autocomplete="email"
+                 placeholder="you@example.com" required>
+          <small class="error" id="login-email-error"></small>
+        </div>
+        <div class="field">
+          <label for="login-password">Password</label>
+          <input id="login-password" name="password" type="password"
+                 autocomplete="current-password" placeholder="Enter your password"
+                 minlength="8" required>
+                   <button type="button" class="toggle-password" aria-label="Show password" style="position: absolute; right: 10px; top: 35%;">👁️</button>
+
+          <small class="error" id="login-password-error"></small>
+        </div>
+        <button class="submit-button" type="submit">Log in</button>
+        <p class="form-message" id="login-message" aria-live="polite"></p>
+      </form>
+
+      <form id="signup-form" class="account-form" hidden novalidate>
+        <div class="field">
+          <label for="signup-name">Full name</label>
+          <input id="signup-name" name="name" type="text" autocomplete="name"
+                 placeholder="Your name" minlength="2" required>
+          <small class="error" id="signup-name-error"></small>
+        </div>
+        <div class="field">
+          <label for="signup-email">Email address</label>
+          <input id="signup-email" name="email" type="email" autocomplete="email"
+                 placeholder="you@example.com" required>
+          <small class="error" id="signup-email-error"></small>
+        </div>
+        <div class="field">
+          <label for="signup-password">Password</label>
+          <input id="signup-password" name="password" type="password"
+                 autocomplete="new-password" placeholder="At least 8 characters"
+                 minlength="8" required>
+          <small class="error" id="signup-password-error"></small>
+        </div>
+        <div class="field">
+          <label for="signup-confirm-password">Confirm password</label>
+          <input id="signup-confirm-password" name="confirmPassword" type="password"
+                 autocomplete="new-password" placeholder="Enter your password again" required>
+          <small class="error" id="signup-confirm-password-error"></small>
+        </div>
+        <button class="submit-button" type="submit">Create account</button>
+        <p class="form-message" id="signup-message" aria-live="polite"></p>
+      </form>
+
+      <p class="switch-prompt">
+        <span id="switch-label">Don't have an account?</span>
+        <button class="switch-button" id="switch-button" type="button"
+                aria-controls="signup-form">Sign up</button>
+      </p>
+      <p class="demo-note">Demo only — connect a secure authentication service to sign in.</p>
+    </section>
+  </main>
+</body>
+</html>
