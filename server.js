@@ -5,6 +5,7 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { initDatabase, getPool } = require("./db");
+const { sendOtpEmail } = require("./mailer");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -305,17 +306,26 @@ app.post("/api/forgot-password", async (req, res) => {
       [normalizedEmail, otp, expiresAt]
     );
 
+    // Send real email via Nodemailer
+    const emailResult = await sendOtpEmail(user.email, user.username, otp);
+
     console.log(`\n===========================================`);
-    console.log(`🔑 [PASSWORD RESET OTP - MYSQL]`);
+    console.log(`🔑 [PASSWORD RESET OTP]`);
     console.log(`To: ${user.email} (Username: ${user.username})`);
     console.log(`OTP Code: ${otp}`);
+    console.log(`Live Email Sent: ${emailResult.emailSent ? "YES ✅" : "NO (Demo mode) ℹ️"}`);
     console.log(`Expires in: 10 minutes`);
     console.log(`===========================================\n`);
 
+    const userMsg = emailResult.emailSent
+      ? `የማረጋገጫ OTP ኮድ ወደ ኢሜይልዎ (${user.email}) ተልኳል! እባክዎ Inbox ወይም Spam ፎልደርዎን ይመልከቱ።`
+      : `የማረጋገጫ OTP ኮድ ተልኳል! ኮዱ፦ ${otp} (OTP Code sent)`;
+
     return res.status(200).json({
       success: true,
-      message: `የማረጋገጫ OTP ኮድ ተልኳል! ኮዱ፦ ${otp} (OTP code sent successfully!)`,
-      otpDemo: otp, // Returned for easy testing during development
+      message: userMsg,
+      emailSent: emailResult.emailSent,
+      otpDemo: emailResult.emailSent ? undefined : otp,
     });
   } catch (error) {
     console.error("Forgot Password Error:", error);

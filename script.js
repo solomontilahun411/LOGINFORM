@@ -262,14 +262,20 @@ if (forgotPassword && resetModal) {
         resetStep1.classList.remove("active");
         resetStep2.classList.add("active");
 
-        // Pre-fill OTP demo code for instant easy testing
+        const otpInput = document.getElementById("resetOtp");
         if (data.otpDemo) {
-          document.getElementById("resetOtp").value = data.otpDemo;
+          // Demo fallback
+          otpInput.value = data.otpDemo;
+          document.getElementById("resetNewPassword").focus();
+        } else {
+          // Real live email delivery!
+          otpInput.value = "";
+          otpInput.placeholder = "Enter 6-digit code from Gmail";
+          otpInput.focus();
         }
 
         setupToggleButtons();
         if (window.lucide) lucide.createIcons();
-        document.getElementById("resetNewPassword").focus();
       } else {
         showToast(data.message || "Failed to send OTP.", "error");
       }
