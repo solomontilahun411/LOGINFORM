@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Dashboard - Solomon Dev</title>
+  <link rel="stylesheet" href="dashboard.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body>
+  <div id="toast" class="toast" role="alert" aria-live="polite"></div>
+
+  <!-- Top Navigation Bar -->
+  <header class="navbar">
+    <div class="nav-brand">
+      <div class="brand-icon">
+        <i data-lucide="shield-check"></i>
+      </div>
+      <span>SOLOMON DEV</span>
+    </div>
+
+    <div class="nav-actions">
+      <div class="user-status">
+        <span class="status-dot"></span>
+        <span class="status-text">Active Session</span>
+      </div>
+      <button type="button" class="nav-btn" id="openSettingsNavBtn" title="Account Settings">
+        <i data-lucide="settings"></i>
+        <span>Settings</span>
+      </button>
+      <button type="button" class="logout-btn" id="logoutBtn" title="Logout">
+        <i data-lucide="log-out"></i>
+        <span>Logout</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Dashboard Container -->
+  <main class="dashboard-container">
+    <!-- Hero Welcome -->
+    <section class="hero-section">
+      <div class="hero-content">
+        <h1>Welcome back, <span id="heroUsername" class="highlight-text">Developer</span>! 👋</h1>
+        <p>You are authenticated securely with JWT encryption. Manage your profile and daily tasks below.</p>
+      </div>
+      <div class="hero-badge">
+        <i data-lucide="badge-check"></i>
+        <span>Verified Member</span>
+      </div>
+    </section>
+
+    <!-- Grid Content -->
+    <div class="dashboard-grid">
+      <!-- User Profile Card -->
+      <article class="card profile-card">
+        <div class="profile-header">
+          <div class="avatar-wrapper">
+            <div class="avatar" id="userAvatar">SD</div>
+            <button type="button" class="avatar-edit-overlay" id="triggerAvatarUploadBtn" title="Upload Photo (ፎቶ ይጫኑ)">
+              <i data-lucide="camera"></i>
+            </button>
+            <input type="file" id="directAvatarInput" accept="image/*" style="display: none;">
+          </div>
+          <div class="profile-title">
+            <h2 id="profileUsername">Loading...</h2>
+            <p id="profileEmail">loading@example.com</p>
+          </div>
+        </div>
+
+        <div class="profile-details">
+          <div class="detail-row">
+            <span class="label"><i data-lucide="user"></i> Account ID</span>
+            <span class="value" id="profileId">#...</span>
+          </div>
+          <div class="detail-row">
+            <span class="label"><i data-lucide="calendar"></i> Joined</span>
+            <span class="value" id="profileJoined">Oct 2026</span>
+          </div>
+          <div class="detail-row">
+            <span class="label"><i data-lucide="key"></i> Auth Method</span>
+            <span class="value highlight">JWT (7 Days)</span>
+          </div>
+          <div class="detail-row">
+            <span class="label"><i data-lucide="shield"></i> Password Encryption</span>
+            <span class="value highlight">bcrypt (Salt 10)</span>
+          </div>
+        </div>
+
+        <button type="button" class="btn-card-footer" id="openProfileModalBtn">
+          <i data-lucide="user-pen"></i>
+          <span>Edit Profile & Photo</span>
+        </button>
+      </article>
+
+      <!-- Security Status Card -->
+      <article class="card">
+        <div class="card-icon">
+          <i data-lucide="lock"></i>
+        </div>
+        <h3>Security Overview</h3>
+        <p class="card-description">Your session is protected with JSON Web Tokens and verified against the Node.js backend.</p>
+        <ul class="feature-list">
+          <li><i data-lucide="check-circle-2"></i> Token validated on server via <code>/api/me</code></li>
+          <li><i data-lucide="check-circle-2"></i> Passwords stored as irreversible salted hashes</li>
+          <li><i data-lucide="check-circle-2"></i> 6-Digit OTP recovery support active</li>
+        </ul>
+        <button type="button" class="btn-card-footer secondary" id="openPasswordModalBtn">
+          <i data-lucide="key-round"></i>
+          <span>Change Password</span>
+        </button>
+      </article>
+
+      <!-- Quick Actions Card -->
+      <article class="card">
+        <div class="card-icon">
+          <i data-lucide="sliders"></i>
+        </div>
+        <h3>Account Actions</h3>
+        <p class="card-description">Manage your current active session and test backend endpoints.</p>
+        <div class="action-buttons">
+          <button type="button" class="btn-action" id="refreshSessionBtn">
+            <i data-lucide="refresh-cw"></i> Refresh Session
+          </button>
+          <button type="button" class="btn-action secondary" id="openSettingsCardBtn">
+            <i data-lucide="settings"></i> Profile Settings
+          </button>
+          <a href="index.html" class="btn-action secondary">
+            <i data-lucide="arrow-left"></i> Back to Auth Page
+          </a>
+        </div>
+      </article>
+    </div>
+
+    <!-- Personal Tasks & Notes Section -->
+    <section class="tasks-section card">
+      <div class="tasks-header">
+        <div class="tasks-title-group">
+          <div class="card-icon">
+            <i data-lucide="check-square"></i>
+          </div>
+          <div>
+            <h3>Personal Tasks & Notes (የግል ስራዎች እና ማስታወሻዎች)</h3>
+            <p class="card-description">Save and manage your tasks securely with your account in real-time.</p>
+          </div>
+        </div>
+        <div class="tasks-header-actions">
+          <span class="tasks-stat-badge" id="tasksStatBadge">
+            <i data-lucide="sparkles"></i>
+            <span id="tasksStatText">0 Tasks</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Task Creation Form -->
+      <form id="addTaskForm" class="add-task-form">
+        <div class="task-input-wrapper">
+          <i data-lucide="plus-circle" class="input-icon"></i>
+          <input type="text" id="taskTextInput" placeholder="Add a new task or note... (አዲስ ስራ ወይም ማስታወሻ ይጻፉ)" required autocomplete="off" />
+        </div>
+        
+        <div class="task-controls">
+          <div class="priority-selector">
+            <label for="taskPrioritySelect"><i data-lucide="flag"></i> Priority:</label>
+            <select id="taskPrioritySelect">
+              <option value="medium">🟡 Medium (መካከለኛ)</option>
+              <option value="high">🔴 High (አስቸኳይ)</option>
+              <option value="low">🟢 Low (ቀላል)</option>
+            </select>
+          </div>
+
+          <button type="submit" class="btn-add-task" id="addTaskSubmitBtn">
+            <i data-lucide="plus"></i>
+            <span>Add Task</span>
+          </button>
+        </div>
+      </form>
+
+      <!-- Task Filters Bar -->
+      <div class="task-filters-bar">
+        <div class="filter-tabs">
+          <button type="button" class="filter-tab active" data-filter="all">All (<span id="countAll">0</span>)</button>
+          <button type="button" class="filter-tab" data-filter="active">Active (<span id="countActive">0</span>)</button>
+          <button type="button" class="filter-tab" data-filter="completed">Completed (<span id="countCompleted">0</span>)</button>
+        </div>
+        <div class="filter-summary" id="filterSummary">0 of 0 tasks completed</div>
+      </div>
+
+      <!-- Tasks List Container -->
+      <div class="tasks-list" id="tasksList">
+        <div class="tasks-loading">
+          <i data-lucide="loader-2" class="spin-icon"></i>
+          <span>Loading your tasks...</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Settings & Profile Modal -->
+  <div id="settingsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+    <div class="modal-backdrop" id="modalBackdrop"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <i data-lucide="sliders" class="modal-title-icon"></i>
+          <h3 id="settingsModalTitle">Account Settings</h3>
+        </div>
+        <button type="button" class="modal-close-btn" id="closeSettingsModalBtn" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <!-- Modal Navigation Tabs -->
+      <div class="modal-tabs">
+        <button type="button" class="modal-tab active" id="tabProfileBtn" data-tab="tabProfile">
+          <i data-lucide="user"></i>
+          <span>Profile & Photo</span>
+        </button>
+        <button type="button" class="modal-tab" id="tabPasswordBtn" data-tab="tabPassword">
+          <i data-lucide="lock"></i>
+          <span>Change Password</span>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Tab 1: Profile & Avatar -->
+        <div class="tab-pane active" id="tabProfile">
+          <div class="avatar-setting-section">
+            <div class="modal-avatar-preview-wrap">
+              <div class="avatar large" id="modalAvatarPreview">SD</div>
+            </div>
+            <div class="avatar-actions">
+              <label for="modalAvatarInput" class="btn-modal-action">
+                <i data-lucide="upload"></i>
+                <span>Upload Photo</span>
+              </label>
+              <input type="file" id="modalAvatarInput" accept="image/*" style="display:none;" />
+              <button type="button" class="btn-modal-action danger" id="removeAvatarBtn">
+                <i data-lucide="trash-2"></i>
+                <span>Remove Photo</span>
+              </button>
+            </div>
+            <p class="setting-hint">Square image recommended. Saved securely with your profile.</p>
+          </div>
+
+          <form id="editProfileForm" class="modal-form">
+            <div class="form-group">
+              <label for="editUsernameInput">Username (የተጠቃሚ ስም)</label>
+              <div class="input-with-icon">
+                <i data-lucide="user"></i>
+                <input type="text" id="editUsernameInput" placeholder="Enter new username" required minlength="3" autocomplete="username" />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="displayEmailInput">Email Address (ኢሜይል)</label>
+              <div class="input-with-icon">
+                <i data-lucide="mail"></i>
+                <input type="email" id="displayEmailInput" disabled readonly />
+              </div>
+              <small class="form-note"><i data-lucide="check-circle-2"></i> Verified email locked to this account</small>
+            </div>
+
+            <div class="modal-footer">
+              <button type="submit" class="btn-submit-modal" id="saveProfileBtn">
+                <i data-lucide="check"></i>
+                <span>Save Profile Changes</span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Tab 2: Change Password -->
+        <div class="tab-pane" id="tabPassword">
+          <form id="changePasswordForm" class="modal-form">
+            <div class="form-group">
+              <label for="currentPasswordInput">Current Password (የአሁኑ የይለፍ ቃል)</label>
+              <div class="input-with-icon">
+                <i data-lucide="key"></i>
+                <input type="password" id="currentPasswordInput" placeholder="Enter current password" required autocomplete="current-password" />
+                <button type="button" class="toggle-password-btn" data-target="currentPasswordInput" aria-label="Toggle password visibility">
+                  <i data-lucide="eye"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="newPasswordInput">New Password (አዲሱ የይለፍ ቃል - ቢያንስ 8 ፊደላት)</label>
+              <div class="input-with-icon">
+                <i data-lucide="lock"></i>
+                <input type="password" id="newPasswordInput" placeholder="Enter new password (min. 8 chars)" required minlength="8" autocomplete="new-password" />
+                <button type="button" class="toggle-password-btn" data-target="newPasswordInput" aria-label="Toggle password visibility">
+                  <i data-lucide="eye"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="confirmNewPasswordInput">Confirm New Password (አዲሱን ያረጋግጡ)</label>
+              <div class="input-with-icon">
+                <i data-lucide="shield-check"></i>
+                <input type="password" id="confirmNewPasswordInput" placeholder="Confirm new password" required minlength="8" autocomplete="new-password" />
+                <button type="button" class="toggle-password-btn" data-target="confirmNewPasswordInput" aria-label="Toggle password visibility">
+                  <i data-lucide="eye"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="modal-footer">
+              <button type="submit" class="btn-submit-modal" id="savePasswordBtn">
+                <i data-lucide="shield"></i>
+                <span>Update Password</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="dashboard.js"></script>
+  <script>if (window.lucide) lucide.createIcons();</script>
+</body>
+
+</html>

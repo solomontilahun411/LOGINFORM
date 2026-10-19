@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login & Sign Up</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body>
+  <div id="toast" class="toast" role="alert" aria-live="polite"></div>
+
+  <main class="container" id="container">
+    <section class="form-box login-box">
+      <form id="loginForm">
+        <h2>Login</h2>
+        <div class="input-box">
+          <input type="text" id="loginUsername" name="username" placeholder="Username" autocomplete="username" required>
+          <i data-lucide="user" class="input-icon"></i>
+        </div>
+        <div class="input-box">
+          <input type="password" id="loginPassword" name="password" placeholder="Password" autocomplete="current-password" required>
+          <button type="button" class="toggle-password" aria-label="Toggle password visibility" data-target="loginPassword">
+            <i data-lucide="eye"></i>
+          </button>
+        </div>
+        <div class="remember-forgot">
+          <label><input type="checkbox" name="remember"> Remember me</label>
+          <a href="#" id="forgotPassword">Forgot Password?</a>
+        </div>
+        <button type="submit">Login</button>
+        <p class="social-text">Or connect with creator</p>
+        <div class="social-icons" aria-label="Social media links">
+          <a href="https://github.com/solomontilahun411" target="_blank" rel="noopener noreferrer"
+            aria-label="GitHub"><i class="fa-brands fa-github"></i></a>
+          <a href="https://www.facebook.com/" target="_blank" rel="noopener noreferrer" aria-label="Facebook"><i
+              class="fa-brands fa-facebook"></i></a>
+          <a href="https://www.linkedin.com/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn"><i
+              class="fa-brands fa-linkedin"></i></a>
+          <a href="https://wa.me/251927353933" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp"><i
+              class="fa-brands fa-whatsapp"></i></a>
+          <a href="https://t.me/sol21mariam" target="_blank" rel="noopener noreferrer" aria-label="Telegram"><i
+              class="fa-brands fa-telegram"></i></a>
+          <a href="https://www.instagram.com/" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><i
+              class="fa-brands fa-instagram"></i></a>
+        </div>
+        <p>Don't have an account? <a href="#" id="showRegister">Sign Up</a></p>
+      </form>
+    </section>
+
+    <section class="form-box register-box">
+      <form id="registerForm">
+        <h2>Create Account</h2>
+        <div class="input-box">
+          <input type="text" id="registerUsername" name="username" placeholder="Username" autocomplete="username" required>
+          <i data-lucide="user" class="input-icon"></i>
+        </div>
+        <div class="input-box">
+          <input type="email" id="registerEmail" name="email" placeholder="Email" autocomplete="email" required>
+          <i data-lucide="at-sign" class="input-icon"></i>
+        </div>
+        <div class="input-box">
+          <input type="password" id="registerPassword" name="password" placeholder="Password (8+ characters)" minlength="8"
+            autocomplete="new-password" required>
+          <button type="button" class="toggle-password" aria-label="Toggle password visibility" data-target="registerPassword">
+            <i data-lucide="eye"></i>
+          </button>
+        </div>
+        <div class="input-box">
+          <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Confirm Password" minlength="8"
+            autocomplete="new-password" required>
+          <button type="button" class="toggle-password" aria-label="Toggle password visibility" data-target="confirmPassword">
+            <i data-lucide="eye"></i>
+          </button>
+        </div>
+        <button type="submit">Register</button>
+        <p>Already have an account? <a href="#" id="showLogin">Sign In</a></p>
+      </form>
+    </section>
+
+    <section class="welcome-box welcome-register">
+      <h1>WELCOME TO SOLOMON DEV!</h1>
+      <p>New here? Create your account and join us today.</p>
+      <button type="button" class="switch-button" id="welcomeSignUp">Sign Up</button>
+    </section>
+    <section class="welcome-box welcome-login">
+      <h1>WELCOME<br>BACK SOLOMON DEV!</h1>
+      <p>Enter your details to access your account.</p>
+      <button type="button" class="switch-button" id="welcomeSignIn">Sign In</button>
+    </section>
+  </main>
+
+  <!-- Forgot Password & OTP Modal -->
+  <div id="resetModal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-card">
+      <button type="button" class="modal-close" id="closeResetModal" aria-label="Close modal">&times;</button>
+
+      <!-- Step 1: Request OTP -->
+      <div id="resetStep1" class="reset-step active">
+        <h3>Reset Password</h3>
+        <p>Enter your registered email to receive a 6-digit OTP code.</p>
+        <form id="requestOtpForm">
+          <div class="input-box">
+            <input type="email" id="resetEmail" placeholder="Enter your email" required>
+            <i data-lucide="mail" class="input-icon"></i>
+          </div>
+          <button type="submit">Send OTP Code</button>
+        </form>
+      </div>
+
+      <!-- Step 2: Verify OTP & New Password -->
+      <div id="resetStep2" class="reset-step">
+        <h3>Verify & Set Password</h3>
+        <p>Enter the 6-digit OTP and choose a new password.</p>
+        <form id="verifyOtpForm">
+          <div class="input-box">
+            <input type="text" id="resetOtp" placeholder="6-Digit OTP Code" maxlength="6" required>
+            <i data-lucide="key" class="input-icon"></i>
+          </div>
+          <div class="input-box">
+            <input type="password" id="resetNewPassword" placeholder="New Password (8+ chars)" minlength="8" required>
+            <button type="button" class="toggle-password" data-target="resetNewPassword" aria-label="Toggle password">
+              <i data-lucide="eye"></i>
+            </button>
+          </div>
+          <button type="submit">Change Password</button>
+          <button type="button" class="back-link" id="backToStep1">← Change Email</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+  <script>if (window.lucide) lucide.createIcons();</script>
+</body>
+
+</html>
