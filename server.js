@@ -26,6 +26,8 @@ function generateToken(user) {
       id: user.id,
       username: user.username,
       email: user.email,
+      role: user.role || "user",
+      status: user.status || "active",
     },
     JWT_SECRET,
     { expiresIn: "7d" }
@@ -55,6 +57,30 @@ function authenticateToken(req, res, next) {
     req.user = decodedUser;
     next();
   });
+}
+
+// Admin Authorization Middleware
+async function requireAdmin(req, res, next) {
+  try {
+    const pool = getPool();
+    const [rows] = await pool.query("SELECT role, status FROM users WHERE id = ? LIMIT 1", [req.user.id]);
+    if (rows.length === 0 || rows[0].role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "ይህንን አገልግሎት ለመጠቀም የአስተዳዳሪ (Admin) ፈቃድ ያስፈልጋል (Admin access required).",
+      });
+    }
+    if (rows[0].status === "blocked") {
+      return res.status(403).json({
+        success: false,
+        message: "አካውንትዎ ታግዷል (Account suspended).",
+      });
+    }
+    next();
+  } catch (err) {
+    console.error("Require Admin Error:", err);
+    return res.status(500).json({ success: false, message: "Authorization check error" });
+  }
 }
 
 // -------------------------------------------------------------
@@ -135,6 +161,8 @@ app.post("/api/register", async (req, res) => {
       id: userId,
       username: trimmedUsername,
       email: normalizedEmail,
+      role: "user",
+      status: "active",
     };
 
     const token = generateToken(newUser);
@@ -149,6 +177,8 @@ app.post("/api/register", async (req, res) => {
         id: newUser.id,
         username: newUser.username,
         email: newUser.email,
+        role: newUser.role,
+        status: newUser.status,
         avatar: null,
         createdAt: new Date().toISOString(),
       },
@@ -194,6 +224,14 @@ app.post("/api/login", async (req, res) => {
 
     const user = rows[0];
 
+    // Check if user is blocked by administrator
+    if (user.status === "blocked") {
+      return res.status(403).json({
+        success: false,
+        message: "አካውንትዎ በአስተዳዳሪ ታግዷል (Your account has been suspended/blocked by administrator).",
+      });
+    }
+
     // Compare hashed password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
@@ -204,7 +242,7 @@ app.post("/api/login", async (req, res) => {
     }
 
     const token = generateToken(user);
-    console.log(`[MYSQL AUTH] User logged in: ${user.username}`);
+    console.log(`[MYSQL AUTH] User logged in: ${user.username} [Role: ${user.role || 'user'}]`);
 
     return res.status(200).json({
       success: true,
@@ -214,6 +252,8 @@ app.post("/api/login", async (req, res) => {
         id: user.id,
         username: user.username,
         email: user.email,
+        role: user.role || "user",
+        status: user.status || "active",
         avatar: user.avatar || null,
         createdAt: user.created_at,
       },
@@ -234,7 +274,7 @@ app.get("/api/me", authenticateToken, async (req, res) => {
   try {
     const pool = getPool();
     const [rows] = await pool.query(
-      "SELECT id, username, email, avatar, created_at FROM users WHERE id = ? LIMIT 1",
+      "SELECT id, username, email, role, status, avatar, created_at FROM users WHERE id = ? LIMIT 1",
       [req.user.id]
     );
 
@@ -247,12 +287,21 @@ app.get("/api/me", authenticateToken, async (req, res) => {
 
     const user = rows[0];
 
+    if (user.status === "blocked") {
+      return res.status(403).json({
+        success: false,
+        message: "አካውንትዎ በአስተዳዳሪ ታግዷል (Your account is suspended).",
+      });
+    }
+
     return res.status(200).json({
       success: true,
       user: {
         id: user.id,
         username: user.username,
         email: user.email,
+        role: user.role || "user",
+        status: user.status || "active",
         avatar: user.avatar || null,
         createdAt: user.created_at,
       },
@@ -740,6 +789,192 @@ app.delete("/api/todos/:id", authenticateToken, async (req, res) => {
     return res.status(500).json({ success: false, message: "Error deleting todo" });
   }
 });
+
+// -------------------------------------------------------------
+// 12. ADMIN ROUTE: Get System Statistics
+// -------------------------------------------------------------
+app.get("/api/admin/stats", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const pool = getPool();
+    const [userStats] = await pool.query(`
+      SELECT 
+        COUNT(*) AS totalUsers,
+        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS activeUsers,
+        SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END) AS blockedUsers,
+        SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END) AS adminUsers
+      FROM users
+    `);
+
+    const [todoStats] = await pool.query(`
+      SELECT 
+        COUNT(*) AS totalTasks,
+        SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) AS completedTasks
+      FROM todos
+    `);
+
+    return res.status(200).json({
+      success: true,
+      stats: {
+        totalUsers: Number(userStats[0].totalUsers) || 0,
+        activeUsers: Number(userStats[0].activeUsers) || 0,
+        blockedUsers: Number(userStats[0].blockedUsers) || 0,
+        adminUsers: Number(userStats[0].adminUsers) || 0,
+        totalTasks: Number(todoStats[0].totalTasks) || 0,
+        completedTasks: Number(todoStats[0].completedTasks) || 0,
+      },
+    });
+  } catch (error) {
+    console.error("Admin Stats Error:", error);
+    return res.status(500).json({ success: false, message: "Error fetching system stats" });
+  }
+});
+
+// -------------------------------------------------------------
+// 13. ADMIN ROUTE: Get All Users with Task Counts
+// -------------------------------------------------------------
+app.get("/api/admin/users", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const pool = getPool();
+    const [rows] = await pool.query(`
+      SELECT 
+        u.id, 
+        u.username, 
+        u.email, 
+        u.role, 
+        u.status, 
+        u.avatar, 
+        u.created_at AS createdAt,
+        COUNT(t.id) AS taskCount
+      FROM users u
+      LEFT JOIN todos t ON u.id = t.user_id
+      GROUP BY u.id
+      ORDER BY u.created_at DESC
+    `);
+
+    return res.status(200).json({
+      success: true,
+      users: rows,
+    });
+  } catch (error) {
+    console.error("Admin Get Users Error:", error);
+    return res.status(500).json({ success: false, message: "Error fetching users list" });
+  }
+});
+
+// -------------------------------------------------------------
+// 14. ADMIN ROUTE: Toggle / Change User Role (Admin / User)
+// -------------------------------------------------------------
+app.put("/api/admin/users/:id/role", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body;
+
+    if (!["admin", "user"].includes(role)) {
+      return res.status(400).json({ success: false, message: "ትክክለኛ ያልሆነ ሚና (Invalid role)" });
+    }
+
+    if (req.user.id === id && role !== "admin") {
+      return res.status(400).json({
+        success: false,
+        message: "የራስዎን የአስተዳዳሪነት ፈቃድ ማንሳት አይችሉም! (Cannot remove your own admin role).",
+      });
+    }
+
+    const pool = getPool();
+    const [result] = await pool.query("UPDATE users SET role = ? WHERE id = ?", [role, id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: "ተጠቃሚው አልተገኘም (User not found)" });
+    }
+
+    console.log(`[ADMIN] User ID ${id} role changed to ${role} by ${req.user.username}`);
+
+    return res.status(200).json({
+      success: true,
+      message: `የተጠቃሚው ሚና ወደ ${role.toUpperCase()} በተሳካ ሁኔታ ተቀይሯል!`,
+    });
+  } catch (error) {
+    console.error("Admin Change Role Error:", error);
+    return res.status(500).json({ success: false, message: "Error changing user role" });
+  }
+});
+
+// -------------------------------------------------------------
+// 15. ADMIN ROUTE: Toggle User Status (Active / Blocked)
+// -------------------------------------------------------------
+app.put("/api/admin/users/:id/status", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!["active", "blocked"].includes(status)) {
+      return res.status(400).json({ success: false, message: "ትክክለኛ ያልሆነ ሁኔታ (Invalid status)" });
+    }
+
+    if (req.user.id === id && status === "blocked") {
+      return res.status(400).json({
+        success: false,
+        message: "የራስዎን አካውንት ማገድ አይችሉም! (Cannot block your own account).",
+      });
+    }
+
+    const pool = getPool();
+    const [result] = await pool.query("UPDATE users SET status = ? WHERE id = ?", [status, id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: "ተጠቃሚው አልተገኘም (User not found)" });
+    }
+
+    const msg =
+      status === "blocked"
+        ? "ተጠቃሚው በተሳካ ሁኔታ ታግዷል (User has been blocked)"
+        : "የተጠቃሚው እገዳ ተነስቷል (User has been unblocked)";
+
+    console.log(`[ADMIN] User ID ${id} status set to ${status} by ${req.user.username}`);
+
+    return res.status(200).json({
+      success: true,
+      message: msg,
+    });
+  } catch (error) {
+    console.error("Admin Change Status Error:", error);
+    return res.status(500).json({ success: false, message: "Error changing user status" });
+  }
+});
+
+// -------------------------------------------------------------
+// 16. ADMIN ROUTE: Delete User and All Their Data
+// -------------------------------------------------------------
+app.delete("/api/admin/users/:id", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (req.user.id === id) {
+      return res.status(400).json({
+        success: false,
+        message: "የራስዎን አካውንት መሰረዝ አይችሉም! (Cannot delete your own account).",
+      });
+    }
+
+    const pool = getPool();
+    const [result] = await pool.query("DELETE FROM users WHERE id = ?", [id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: "ተጠቃሚው አልተገኘም (User not found)" });
+    }
+
+    console.log(`[ADMIN] User ID ${id} permanently deleted by ${req.user.username}`);
+
+    return res.status(200).json({
+      success: true,
+      message: "ተጠቃሚው እና የተያያዙ መረጃዎቹ በተሳካ ሁኔታ ተሰርዘዋል! (User deleted successfully).",
+    });
+  } catch (error) {
+    console.error("Admin Delete User Error:", error);
+    return res.status(500).json({ success: false, message: "Error deleting user" });
+  }
+});
+
 
 // Start Express Server after MySQL initialization
 async function startServer() {

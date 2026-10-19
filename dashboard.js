@@ -107,6 +107,22 @@ function renderUserProfile(user) {
     });
   }
 
+  // Account Role display & Admin button visibility
+  const profileRole = document.getElementById("profileRole");
+  const openAdminNavBtn = document.getElementById("openAdminNavBtn");
+  if (profileRole) {
+    const isAdmin = user.role === "admin";
+    profileRole.textContent = isAdmin ? "Admin (አስተዳዳሪ)" : "User (ተጠቃሚ)";
+    profileRole.style.color = isAdmin ? "#f87171" : "#20f5c5";
+  }
+  if (openAdminNavBtn) {
+    if (user.role === "admin") {
+      openAdminNavBtn.style.display = "inline-flex";
+    } else {
+      openAdminNavBtn.style.display = "none";
+    }
+  }
+
   // Avatar rendering: show uploaded image or monogram initials
   const initials = (user.username || "SD").slice(0, 2).toUpperCase();
 
@@ -734,5 +750,309 @@ if (refreshSessionBtn) {
   });
 }
 
+// ==============================================================
+// 7. ADMIN MANAGEMENT PANEL
+// ==============================================================
+let adminUsersList = [];
+const adminModal = document.getElementById("adminModal");
+const openAdminNavBtn = document.getElementById("openAdminNavBtn");
+const closeAdminModalBtn = document.getElementById("closeAdminModalBtn");
+const adminModalBackdrop = document.getElementById("adminModalBackdrop");
+const adminSearchInput = document.getElementById("adminSearchInput");
+const adminRoleFilter = document.getElementById("adminRoleFilter");
+const adminStatusFilter = document.getElementById("adminStatusFilter");
+const refreshAdminBtn = document.getElementById("refreshAdminBtn");
+
+function openAdminModal() {
+  if (!adminModal) return;
+  adminModal.classList.add("open");
+  adminModal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+  loadAdminData();
+}
+
+function closeAdminModal() {
+  if (!adminModal) return;
+  adminModal.classList.remove("open");
+  adminModal.setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";
+}
+
+if (openAdminNavBtn) {
+  openAdminNavBtn.addEventListener("click", openAdminModal);
+}
+if (closeAdminModalBtn) {
+  closeAdminModalBtn.addEventListener("click", closeAdminModal);
+}
+if (adminModalBackdrop) {
+  adminModalBackdrop.addEventListener("click", closeAdminModal);
+}
+
+// Load stats and users list from MySQL
+async function loadAdminData() {
+  const token = getAuthToken();
+  if (!token) return;
+
+  const tableBody = document.getElementById("adminUsersTableBody");
+  if (tableBody) {
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="6" class="admin-loading-cell">
+          <i data-lucide="loader-2" class="spin-icon"></i>
+          <span>Loading user data from MySQL...</span>
+        </td>
+      </tr>
+    `;
+    refreshIcons();
+  }
+
+  try {
+    // 1. Fetch System Stats
+    const statsRes = await fetch(`${API_BASE_URL}/api/admin/stats`, {
+      headers: { "Authorization": `Bearer ${token}` },
+    });
+    const statsData = await statsRes.json();
+    if (statsRes.ok && statsData.success) {
+      document.getElementById("adminStatTotalUsers").textContent = statsData.stats.totalUsers;
+      document.getElementById("adminStatActiveUsers").textContent = statsData.stats.activeUsers;
+      document.getElementById("adminStatBlockedUsers").textContent = statsData.stats.blockedUsers;
+      document.getElementById("adminStatTotalTasks").textContent = statsData.stats.totalTasks;
+    }
+
+    // 2. Fetch Users List
+    const usersRes = await fetch(`${API_BASE_URL}/api/admin/users`, {
+      headers: { "Authorization": `Bearer ${token}` },
+    });
+    const usersData = await usersRes.json();
+
+    if (usersRes.ok && usersData.success) {
+      adminUsersList = usersData.users || [];
+      filterAndRenderAdminUsers();
+    } else {
+      showToast(usersData.message || "Failed to load admin data", "error");
+    }
+  } catch (err) {
+    console.error("Admin load error:", err);
+    showToast("Error loading admin information", "error");
+  }
+}
+
+// Filter users by search term, role, and status
+function filterAndRenderAdminUsers() {
+  const searchTerm = (adminSearchInput ? adminSearchInput.value : "").trim().toLowerCase();
+  const roleFilter = adminRoleFilter ? adminRoleFilter.value : "all";
+  const statusFilter = adminStatusFilter ? adminStatusFilter.value : "all";
+
+  const filtered = adminUsersList.filter((u) => {
+    const matchesSearch =
+      u.username.toLowerCase().includes(searchTerm) ||
+      u.email.toLowerCase().includes(searchTerm);
+
+    const matchesRole = roleFilter === "all" || u.role === roleFilter;
+    const matchesStatus = statusFilter === "all" || u.status === statusFilter;
+
+    return matchesSearch && matchesRole && matchesStatus;
+  });
+
+  renderAdminUsersTable(filtered);
+}
+
+if (adminSearchInput) {
+  adminSearchInput.addEventListener("input", filterAndRenderAdminUsers);
+}
+if (adminRoleFilter) {
+  adminRoleFilter.addEventListener("change", filterAndRenderAdminUsers);
+}
+if (adminStatusFilter) {
+  adminStatusFilter.addEventListener("change", filterAndRenderAdminUsers);
+}
+if (refreshAdminBtn) {
+  refreshAdminBtn.addEventListener("click", loadAdminData);
+}
+
+// Render Users HTML Table
+function renderAdminUsersTable(users) {
+  const tbody = document.getElementById("adminUsersTableBody");
+  if (!tbody) return;
+
+  if (users.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align: center; padding: 32px; color: #94a3b8;">
+          ምንም ተጠቃሚ አልተገኘም (No matching users found).
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = users
+    .map((u) => {
+      const isSelf = currentUserData && currentUserData.id === u.id;
+      const initials = (u.username || "U").slice(0, 2).toUpperCase();
+      const avatarHtml = u.avatar
+        ? `<img src="${u.avatar}" alt="${u.username}" />`
+        : initials;
+
+      const dateStr = u.createdAt
+        ? new Date(u.createdAt).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })
+        : "N/A";
+
+      const nextRole = u.role === "admin" ? "user" : "admin";
+      const nextStatus = u.status === "active" ? "blocked" : "active";
+
+      return `
+        <tr data-user-id="${u.id}">
+          <td>
+            <div class="user-cell">
+              <div class="user-cell-avatar">${avatarHtml}</div>
+              <div class="user-cell-info">
+                <span class="user-cell-name">
+                  ${u.username} ${isSelf ? '<span style="color: #38bdf8; font-size: 11px;">(You)</span>' : ""}
+                </span>
+                <span class="user-cell-email">${u.email}</span>
+              </div>
+            </div>
+          </td>
+          <td>
+            <span class="badge-role ${u.role}">
+              <i data-lucide="${u.role === "admin" ? "shield" : "user"}"></i>
+              ${u.role}
+            </span>
+          </td>
+          <td>
+            <span class="badge-status ${u.status}">
+              <span class="status-dot-sm"></span>
+              ${u.status}
+            </span>
+          </td>
+          <td>
+            <span style="font-weight: 700; color: #e2e8f0;">${u.taskCount || 0}</span> tasks
+          </td>
+          <td style="color: #94a3b8; font-size: 12.5px;">${dateStr}</td>
+          <td>
+            <div class="table-actions">
+              ${
+                !isSelf
+                  ? `
+                  <button type="button" class="btn-table-action role-btn" onclick="handleRoleToggle('${u.id}', '${nextRole}')" title="Change role to ${nextRole.toUpperCase()}">
+                    <i data-lucide="${u.role === "admin" ? "user-minus" : "shield-alert"}"></i>
+                  </button>
+
+                  <button type="button" class="btn-table-action status-btn ${u.status === "active" ? "block-btn" : "unblock-btn"}" onclick="handleStatusToggle('${u.id}', '${nextStatus}')" title="${u.status === "active" ? "Block user" : "Unblock user"}">
+                    <i data-lucide="${u.status === "active" ? "user-x" : "user-check"}"></i>
+                  </button>
+
+                  <button type="button" class="btn-table-action delete-btn" onclick="handleDeleteUser('${u.id}', '${u.username}')" title="Delete user">
+                    <i data-lucide="trash-2"></i>
+                  </button>
+                `
+                  : `<span style="font-size: 12px; color: #64748b; font-style: italic;">Current Account</span>`
+              }
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  refreshIcons();
+}
+
+// Global action handlers
+window.handleRoleToggle = async function (userId, newRole) {
+  const token = getAuthToken();
+  if (!token) return;
+
+  if (!confirm(`የዚህን ተጠቃሚ ሚና ወደ "${newRole.toUpperCase()}" መቀየር ይፈልጋሉ?`)) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/role`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+      body: JSON.stringify({ role: newRole }),
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(data.message, "success");
+      loadAdminData();
+    } else {
+      showToast(data.message || "Failed to update role", "error");
+    }
+  } catch (err) {
+    showToast("Server error updating role", "error");
+  }
+};
+
+window.handleStatusToggle = async function (userId, newStatus) {
+  const token = getAuthToken();
+  if (!token) return;
+
+  const actionText = newStatus === "blocked" ? "ማገድ (Block)" : "እገዳ ማንሳት (Unblock)";
+  if (!confirm(`እርግጠኛ ነዎት ይህን ተጠቃሚ ${actionText} ይፈልጋሉ?`)) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/status`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+      body: JSON.stringify({ status: newStatus }),
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(data.message, "success");
+      loadAdminData();
+    } else {
+      showToast(data.message || "Failed to update status", "error");
+    }
+  } catch (err) {
+    showToast("Server error updating status", "error");
+  }
+};
+
+window.handleDeleteUser = async function (userId, username) {
+  const token = getAuthToken();
+  if (!token) return;
+
+  if (!confirm(`⚠️ ማስጠንቀቂያ፦ ተጠቃሚውን "${username}" እና የተያያዙ ስራዎቹን በሙሉ እስከመጨረሻው መሰረዝ ይፈልጋሉ?`)) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}`, {
+      method: "DELETE",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+      },
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(data.message, "success");
+      loadAdminData();
+    } else {
+      showToast(data.message || "Failed to delete user", "error");
+    }
+  } catch (err) {
+    showToast("Server error deleting user", "error");
+  }
+};
+
 // Initial Boot
 loadUserSession();
+

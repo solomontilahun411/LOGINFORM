@@ -42,10 +42,28 @@ async function initDatabase() {
         email VARCHAR(150) NOT NULL UNIQUE,
         password VARCHAR(255) NOT NULL,
         avatar LONGTEXT NULL,
+        role ENUM('admin', 'user') DEFAULT 'user',
+        status ENUM('active', 'blocked') DEFAULT 'active',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
+    // Ensure columns exist on already created tables
+    const [cols] = await pool.query("SHOW COLUMNS FROM users");
+    const colNames = cols.map((c) => c.Field);
+    if (!colNames.includes("role")) {
+      await pool.query("ALTER TABLE users ADD COLUMN role ENUM('admin', 'user') DEFAULT 'user'");
+    }
+    if (!colNames.includes("status")) {
+      await pool.query("ALTER TABLE users ADD COLUMN status ENUM('active', 'blocked') DEFAULT 'active'");
+    }
+
+    // Ensure solomontilahun has admin privileges
+    await pool.query(
+      "UPDATE users SET role = 'admin' WHERE username = 'solomontilahun' OR email = 'solomontilahun411@gmail.com'"
+    );
+
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS todos (

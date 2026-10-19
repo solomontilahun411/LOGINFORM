@@ -26,6 +26,10 @@
         <span class="status-dot"></span>
         <span class="status-text">Active Session</span>
       </div>
+      <button type="button" class="nav-btn admin-nav-btn" id="openAdminNavBtn" style="display: none;" title="Admin Dashboard">
+        <i data-lucide="shield-alert"></i>
+        <span>Admin Panel</span>
+      </button>
       <button type="button" class="nav-btn" id="openSettingsNavBtn" title="Account Settings">
         <i data-lucide="settings"></i>
         <span>Settings</span>
@@ -89,6 +93,10 @@
           <div class="detail-row">
             <span class="label"><i data-lucide="database"></i> Database</span>
             <span class="value highlight">MySQL (MariaDB)</span>
+          </div>
+          <div class="detail-row">
+            <span class="label"><i data-lucide="shield-check"></i> Role</span>
+            <span class="value highlight" id="profileRole">User</span>
           </div>
         </div>
 
@@ -319,6 +327,123 @@
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Management Panel Modal -->
+  <div id="adminModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="adminModalTitle">
+    <div class="modal-backdrop" id="adminModalBackdrop"></div>
+    <div class="modal-dialog admin-dialog">
+      <div class="modal-header admin-modal-header">
+        <div class="modal-title-wrap">
+          <div class="admin-badge-icon">
+            <i data-lucide="shield-alert"></i>
+          </div>
+          <div>
+            <h3 id="adminModalTitle">Admin Management Panel</h3>
+            <p class="admin-subtitle">የተጠቃሚዎች እና የስርዓቱ አስተዳደር መቆጣጠሪያ (User & System Management)</p>
+          </div>
+        </div>
+        <button type="button" class="modal-close-btn" id="closeAdminModalBtn" aria-label="Close dialog">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <div class="admin-modal-body">
+        <!-- 4 KPI Stat Cards -->
+        <div class="admin-stats-grid">
+          <div class="admin-stat-card">
+            <div class="stat-icon-box users-icon">
+              <i data-lucide="users"></i>
+            </div>
+            <div class="stat-content">
+              <span class="stat-number" id="adminStatTotalUsers">0</span>
+              <span class="stat-label">Total Users</span>
+            </div>
+          </div>
+
+          <div class="admin-stat-card">
+            <div class="stat-icon-box active-icon">
+              <i data-lucide="user-check"></i>
+            </div>
+            <div class="stat-content">
+              <span class="stat-number" id="adminStatActiveUsers">0</span>
+              <span class="stat-label">Active Users</span>
+            </div>
+          </div>
+
+          <div class="admin-stat-card">
+            <div class="stat-icon-box blocked-icon">
+              <i data-lucide="user-x"></i>
+            </div>
+            <div class="stat-content">
+              <span class="stat-number" id="adminStatBlockedUsers">0</span>
+              <span class="stat-label">Blocked Accounts</span>
+            </div>
+          </div>
+
+          <div class="admin-stat-card">
+            <div class="stat-icon-box tasks-icon">
+              <i data-lucide="check-circle-2"></i>
+            </div>
+            <div class="stat-content">
+              <span class="stat-number" id="adminStatTotalTasks">0</span>
+              <span class="stat-label">Total Tasks</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter & Search Toolbar -->
+        <div class="admin-toolbar">
+          <div class="admin-search-wrapper">
+            <i data-lucide="search" class="admin-search-icon"></i>
+            <input type="text" id="adminSearchInput" placeholder="Search by username or email..." autocomplete="off" />
+          </div>
+
+          <div class="admin-filters">
+            <select id="adminRoleFilter" class="admin-select" title="Filter by role">
+              <option value="all">All Roles (ሁሉም)</option>
+              <option value="admin">Admins only</option>
+              <option value="user">Regular Users</option>
+            </select>
+
+            <select id="adminStatusFilter" class="admin-select" title="Filter by status">
+              <option value="all">All Status</option>
+              <option value="active">Active Accounts</option>
+              <option value="blocked">Blocked Accounts</option>
+            </select>
+
+            <button type="button" id="refreshAdminBtn" class="btn-admin-refresh" title="Refresh Users">
+              <i data-lucide="rotate-cw"></i>
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Users Table -->
+        <div class="admin-table-wrapper">
+          <table class="admin-table" id="adminUsersTable">
+            <thead>
+              <tr>
+                <th>User (ተጠቃሚ)</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Tasks</th>
+                <th>Joined</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="adminUsersTableBody">
+              <tr>
+                <td colspan="6" class="admin-loading-cell">
+                  <i data-lucide="loader-2" class="spin-icon"></i>
+                  <span>Loading user data from MySQL...</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
