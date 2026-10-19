@@ -1,9 +1,10 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
-const fs = require("fs");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { initDatabase, getPool } = require("./db");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -16,63 +17,6 @@ app.use(express.urlencoded({ limit: "15mb", extended: true }));
 
 // Serve frontend static files
 app.use(express.static(__dirname));
-
-// Database file paths
-const DATA_DIR = path.join(__dirname, "data");
-const USERS_FILE = path.join(DATA_DIR, "users.json");
-const TODOS_FILE = path.join(DATA_DIR, "todos.json");
-
-// Ensure data folder and data files exist
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-if (!fs.existsSync(USERS_FILE)) {
-  fs.writeFileSync(USERS_FILE, JSON.stringify([], null, 2), "utf-8");
-}
-if (!fs.existsSync(TODOS_FILE)) {
-  fs.writeFileSync(TODOS_FILE, JSON.stringify([], null, 2), "utf-8");
-}
-
-// In-memory OTP storage for password reset: email -> { otp, expiresAt }
-const otpStore = new Map();
-
-// Helper functions to read/write users
-function getUsers() {
-  try {
-    const data = fs.readFileSync(USERS_FILE, "utf-8");
-    return JSON.parse(data || "[]");
-  } catch (error) {
-    console.error("Error reading users:", error);
-    return [];
-  }
-}
-
-function saveUsers(users) {
-  try {
-    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Error saving users:", error);
-  }
-}
-
-// Helper functions to read/write todos
-function getTodos() {
-  try {
-    const data = fs.readFileSync(TODOS_FILE, "utf-8");
-    return JSON.parse(data || "[]");
-  } catch (error) {
-    console.error("Error reading todos:", error);
-    return [];
-  }
-}
-
-function saveTodos(todos) {
-  try {
-    fs.writeFileSync(TODOS_FILE, JSON.stringify(todos, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Error saving todos:", error);
-  }
-}
 
 // Helper to generate JWT Token
 function generateToken(user) {
@@ -113,7 +57,24 @@ function authenticateToken(req, res, next) {
 }
 
 // -------------------------------------------------------------
-// 1. ROUTE: Register new user
+// 0. HEALTH / STATUS ROUTE
+// -------------------------------------------------------------
+app.get("/api/health", async (req, res) => {
+  try {
+    const pool = getPool();
+    await pool.query("SELECT 1");
+    return res.status(200).json({
+      status: "healthy",
+      database: "MySQL / MariaDB",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    return res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// -------------------------------------------------------------
+// 1. ROUTE: Register new user (Saved to MySQL)
 // -------------------------------------------------------------
 app.post("/api/register", async (req, res) => {
   try {
@@ -133,40 +94,51 @@ app.post("/api/register", async (req, res) => {
       });
     }
 
-    const users = getUsers();
+    const trimmedUsername = username.trim();
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const pool = getPool();
 
     // Check if username or email already exists
-    const existingUser = users.find(
-      (u) =>
-        u.username.toLowerCase() === username.trim().toLowerCase() ||
-        u.email.toLowerCase() === email.trim().toLowerCase()
+    const [existing] = await pool.query(
+      "SELECT id, username, email FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) LIMIT 1",
+      [trimmedUsername, normalizedEmail]
     );
 
-    if (existingUser) {
+    if (existing.length > 0) {
+      const match = existing[0];
+      const conflictMsg =
+        match.username.toLowerCase() === trimmedUsername.toLowerCase()
+          ? "ይህ የተጠቃሚ ስም አስቀድሞ ተመዝግቧል (Username already registered)."
+          : "ይህ ኢሜይል አስቀድሞ ተመዝግቧል (Email already registered).";
+
       return res.status(409).json({
         success: false,
-        message: "ይህ ስም ወይም ኢሜይል አስቀድሞ ተመዝግቧል (Username or Email already registered).",
+        message: conflictMsg,
       });
     }
 
     // Hash the password securely
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
+    const userId = Date.now().toString();
+
+    // Insert new user into MySQL
+    await pool.query(
+      `INSERT INTO users (id, username, email, password, avatar, created_at)
+       VALUES (?, ?, ?, ?, NULL, NOW())`,
+      [userId, trimmedUsername, normalizedEmail, hashedPassword]
+    );
 
     const newUser = {
-      id: Date.now().toString(),
-      username: username.trim(),
-      email: email.trim().toLowerCase(),
-      password: hashedPassword,
-      createdAt: new Date().toISOString(),
+      id: userId,
+      username: trimmedUsername,
+      email: normalizedEmail,
     };
-
-    users.push(newUser);
-    saveUsers(users);
 
     const token = generateToken(newUser);
 
-    console.log(`[AUTH] New user registered: ${newUser.username}`);
+    console.log(`[MYSQL AUTH] New user registered: ${newUser.username} (${newUser.email})`);
 
     return res.status(201).json({
       success: true,
@@ -177,7 +149,7 @@ app.post("/api/register", async (req, res) => {
         username: newUser.username,
         email: newUser.email,
         avatar: null,
-        createdAt: newUser.createdAt,
+        createdAt: new Date().toISOString(),
       },
     });
   } catch (error) {
@@ -190,7 +162,7 @@ app.post("/api/register", async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 2. ROUTE: Login existing user (Returns JWT Token)
+// 2. ROUTE: Login existing user (Queries MySQL & returns JWT)
 // -------------------------------------------------------------
 app.post("/api/login", async (req, res) => {
   try {
@@ -203,19 +175,23 @@ app.post("/api/login", async (req, res) => {
       });
     }
 
-    const users = getUsers();
-    const user = users.find(
-      (u) =>
-        u.username.toLowerCase() === username.trim().toLowerCase() ||
-        u.email.toLowerCase() === username.trim().toLowerCase()
+    const pool = getPool();
+    const trimmedInput = username.trim();
+
+    // Search by username or email
+    const [rows] = await pool.query(
+      "SELECT * FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) LIMIT 1",
+      [trimmedInput, trimmedInput]
     );
 
-    if (!user) {
+    if (rows.length === 0) {
       return res.status(401).json({
         success: false,
         message: "የተሳሳተ Username ወይም Password (Invalid username or password).",
       });
     }
+
+    const user = rows[0];
 
     // Compare hashed password
     const isMatch = await bcrypt.compare(password, user.password);
@@ -227,7 +203,7 @@ app.post("/api/login", async (req, res) => {
     }
 
     const token = generateToken(user);
-    console.log(`[AUTH] User logged in: ${user.username}`);
+    console.log(`[MYSQL AUTH] User logged in: ${user.username}`);
 
     return res.status(200).json({
       success: true,
@@ -238,7 +214,7 @@ app.post("/api/login", async (req, res) => {
         username: user.username,
         email: user.email,
         avatar: user.avatar || null,
-        createdAt: user.createdAt,
+        createdAt: user.created_at,
       },
     });
   } catch (error) {
@@ -253,33 +229,43 @@ app.post("/api/login", async (req, res) => {
 // -------------------------------------------------------------
 // 3. ROUTE: Get Current Authenticated User (Protected via JWT)
 // -------------------------------------------------------------
-app.get("/api/me", authenticateToken, (req, res) => {
-  const users = getUsers();
-  const user = users.find((u) => u.id === req.user.id);
+app.get("/api/me", authenticateToken, async (req, res) => {
+  try {
+    const pool = getPool();
+    const [rows] = await pool.query(
+      "SELECT id, username, email, avatar, created_at FROM users WHERE id = ? LIMIT 1",
+      [req.user.id]
+    );
 
-  if (!user) {
-    return res.status(404).json({
-      success: false,
-      message: "ተጠቃሚው አልተገኘም (User not found).",
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "ተጠቃሚው አልተገኘም (User not found).",
+      });
+    }
+
+    const user = rows[0];
+
+    return res.status(200).json({
+      success: true,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        avatar: user.avatar || null,
+        createdAt: user.created_at,
+      },
     });
+  } catch (error) {
+    console.error("Get /api/me Error:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
   }
-
-  return res.status(200).json({
-    success: true,
-    user: {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      avatar: user.avatar || null,
-      createdAt: user.createdAt,
-    },
-  });
 });
 
 // -------------------------------------------------------------
-// 4. ROUTE: Request Password Reset OTP
+// 4. ROUTE: Request Password Reset OTP (Saved in MySQL)
 // -------------------------------------------------------------
-app.post("/api/forgot-password", (req, res) => {
+app.post("/api/forgot-password", async (req, res) => {
   try {
     const { email } = req.body;
 
@@ -290,25 +276,38 @@ app.post("/api/forgot-password", (req, res) => {
       });
     }
 
-    const users = getUsers();
-    const user = users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase());
+    const normalizedEmail = email.trim().toLowerCase();
+    const pool = getPool();
 
-    if (!user) {
+    const [rows] = await pool.query(
+      "SELECT id, username, email FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1",
+      [normalizedEmail]
+    );
+
+    if (rows.length === 0) {
       return res.status(404).json({
         success: false,
         message: "በዚህ ኢሜይል የተመዘገበ አካውንት አልተገኘም (No account found with this email).",
       });
     }
 
+    const user = rows[0];
+
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
 
-    otpStore.set(user.email.toLowerCase(), { otp, expiresAt });
+    // Store in password_resets table
+    await pool.query(
+      `INSERT INTO password_resets (email, otp, expires_at, created_at)
+       VALUES (?, ?, ?, NOW())
+       ON DUPLICATE KEY UPDATE otp = VALUES(otp), expires_at = VALUES(expires_at), created_at = NOW()`,
+      [normalizedEmail, otp, expiresAt]
+    );
 
     console.log(`\n===========================================`);
-    console.log(`🔑 [PASSWORD RESET OTP]`);
-    console.log(`To: ${user.email}`);
+    console.log(`🔑 [PASSWORD RESET OTP - MYSQL]`);
+    console.log(`To: ${user.email} (Username: ${user.username})`);
     console.log(`OTP Code: ${otp}`);
     console.log(`Expires in: 10 minutes`);
     console.log(`===========================================\n`);
@@ -348,17 +347,25 @@ app.post("/api/reset-password", async (req, res) => {
       });
     }
 
-    const storedOtpData = otpStore.get(email.trim().toLowerCase());
+    const normalizedEmail = email.trim().toLowerCase();
+    const pool = getPool();
 
-    if (!storedOtpData) {
+    const [resetRows] = await pool.query(
+      "SELECT * FROM password_resets WHERE LOWER(email) = LOWER(?) LIMIT 1",
+      [normalizedEmail]
+    );
+
+    if (resetRows.length === 0) {
       return res.status(400).json({
         success: false,
         message: "OTP አልተጠየቀም ወይም ጊዜው አልፏል (Invalid or expired OTP).",
       });
     }
 
-    if (Date.now() > storedOtpData.expiresAt) {
-      otpStore.delete(email.trim().toLowerCase());
+    const storedOtpData = resetRows[0];
+
+    if (Date.now() > Number(storedOtpData.expires_at)) {
+      await pool.query("DELETE FROM password_resets WHERE LOWER(email) = LOWER(?)", [normalizedEmail]);
       return res.status(400).json({
         success: false,
         message: "የ OTP ኮዱ ጊዜ አልፎበታል (OTP expired).",
@@ -372,29 +379,26 @@ app.post("/api/reset-password", async (req, res) => {
       });
     }
 
-    // OTP is valid, hash new password
-    const users = getUsers();
-    const userIndex = users.findIndex(
-      (u) => u.email.toLowerCase() === email.trim().toLowerCase()
+    // OTP is valid; hash new password and update MySQL
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    const [updateResult] = await pool.query(
+      "UPDATE users SET password = ? WHERE LOWER(email) = LOWER(?)",
+      [hashedPassword, normalizedEmail]
     );
 
-    if (userIndex === -1) {
+    if (updateResult.affectedRows === 0) {
       return res.status(404).json({
         success: false,
         message: "ተጠቃሚው አልተገኘም (User not found).",
       });
     }
 
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
-
-    users[userIndex].password = hashedPassword;
-    saveUsers(users);
-
     // Clear used OTP
-    otpStore.delete(email.trim().toLowerCase());
+    await pool.query("DELETE FROM password_resets WHERE LOWER(email) = LOWER(?)", [normalizedEmail]);
 
-    console.log(`[AUTH] Password reset successfully for: ${users[userIndex].username}`);
+    console.log(`[MYSQL AUTH] Password reset successfully for: ${normalizedEmail}`);
 
     return res.status(200).json({
       success: true,
@@ -410,20 +414,25 @@ app.post("/api/reset-password", async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 6. ROUTE: Update User Profile (Username & Avatar)
+// 6. ROUTE: Update User Profile (Username & Avatar in MySQL)
 // -------------------------------------------------------------
-app.put("/api/profile", authenticateToken, (req, res) => {
+app.put("/api/profile", authenticateToken, async (req, res) => {
   try {
     const { username, avatar } = req.body;
-    const users = getUsers();
-    const userIndex = users.findIndex((u) => u.id === req.user.id);
+    const pool = getPool();
 
-    if (userIndex === -1) {
+    // Verify user exists
+    const [userRows] = await pool.query("SELECT * FROM users WHERE id = ? LIMIT 1", [req.user.id]);
+    if (userRows.length === 0) {
       return res.status(404).json({
         success: false,
         message: "ተጠቃሚው አልተገኘም (User not found).",
       });
     }
+
+    const currentUser = userRows[0];
+    let newUsername = currentUser.username;
+    let newAvatar = currentUser.avatar;
 
     if (username !== undefined) {
       const trimmedUsername = username.trim();
@@ -435,31 +444,42 @@ app.put("/api/profile", authenticateToken, (req, res) => {
       }
 
       // Ensure username is unique among other users
-      const isTaken = users.some(
-        (u) =>
-          u.id !== req.user.id &&
-          u.username.toLowerCase() === trimmedUsername.toLowerCase()
+      const [taken] = await pool.query(
+        "SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND id != ? LIMIT 1",
+        [trimmedUsername, req.user.id]
       );
-      if (isTaken) {
+
+      if (taken.length > 0) {
         return res.status(409).json({
           success: false,
           message: "ይህ የተጠቃሚ ስም አስቀድሞ ተይዟል (Username already taken).",
         });
       }
-      users[userIndex].username = trimmedUsername;
+
+      newUsername = trimmedUsername;
     }
 
     if (avatar !== undefined) {
-      // Store Base64 data URL or null to clear avatar
-      users[userIndex].avatar = avatar;
+      newAvatar = avatar; // Base64 or null
     }
 
-    saveUsers(users);
+    // Update in MySQL
+    await pool.query(
+      "UPDATE users SET username = ?, avatar = ? WHERE id = ?",
+      [newUsername, newAvatar, req.user.id]
+    );
 
-    const updatedUser = users[userIndex];
+    const updatedUser = {
+      id: currentUser.id,
+      username: newUsername,
+      email: currentUser.email,
+      avatar: newAvatar,
+      createdAt: currentUser.created_at,
+    };
+
     const newToken = generateToken(updatedUser);
 
-    console.log(`[PROFILE] Updated profile for user: ${updatedUser.username}`);
+    console.log(`[MYSQL PROFILE] Updated profile for user: ${updatedUser.username}`);
 
     return res.status(200).json({
       success: true,
@@ -503,17 +523,19 @@ app.put("/api/change-password", authenticateToken, async (req, res) => {
       });
     }
 
-    const users = getUsers();
-    const userIndex = users.findIndex((u) => u.id === req.user.id);
+    const pool = getPool();
+    const [rows] = await pool.query("SELECT * FROM users WHERE id = ? LIMIT 1", [req.user.id]);
 
-    if (userIndex === -1) {
+    if (rows.length === 0) {
       return res.status(404).json({
         success: false,
         message: "ተጠቃሚው አልተገኘም (User not found).",
       });
     }
 
-    const isMatch = await bcrypt.compare(currentPassword, users[userIndex].password);
+    const user = rows[0];
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
       return res.status(401).json({
         success: false,
@@ -524,10 +546,9 @@ app.put("/api/change-password", authenticateToken, async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-    users[userIndex].password = hashedPassword;
-    saveUsers(users);
+    await pool.query("UPDATE users SET password = ? WHERE id = ?", [hashedPassword, req.user.id]);
 
-    console.log(`[AUTH] Password changed for: ${users[userIndex].username}`);
+    console.log(`[MYSQL AUTH] Password changed for: ${user.username}`);
 
     return res.status(200).json({
       success: true,
@@ -543,18 +564,27 @@ app.put("/api/change-password", authenticateToken, async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 8. ROUTE: Get User's Personal Todos
+// 8. ROUTE: Get User's Personal Todos from MySQL
 // -------------------------------------------------------------
-app.get("/api/todos", authenticateToken, (req, res) => {
+app.get("/api/todos", authenticateToken, async (req, res) => {
   try {
-    const todos = getTodos();
-    const userTodos = todos
-      .filter((t) => t.userId === req.user.id)
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const pool = getPool();
+    const [rows] = await pool.query(
+      `SELECT id, user_id AS userId, text, priority, completed, created_at AS createdAt
+       FROM todos
+       WHERE user_id = ?
+       ORDER BY created_at DESC`,
+      [req.user.id]
+    );
+
+    const formattedTodos = rows.map((t) => ({
+      ...t,
+      completed: Boolean(t.completed),
+    }));
 
     return res.status(200).json({
       success: true,
-      todos: userTodos,
+      todos: formattedTodos,
     });
   } catch (error) {
     console.error("Get Todos Error:", error);
@@ -563,9 +593,9 @@ app.get("/api/todos", authenticateToken, (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 9. ROUTE: Create New Todo
+// 9. ROUTE: Create New Todo in MySQL
 // -------------------------------------------------------------
-app.post("/api/todos", authenticateToken, (req, res) => {
+app.post("/api/todos", authenticateToken, async (req, res) => {
   try {
     const { text, priority } = req.body;
 
@@ -578,10 +608,17 @@ app.post("/api/todos", authenticateToken, (req, res) => {
 
     const validPriorities = ["low", "medium", "high"];
     const chosenPriority = validPriorities.includes(priority) ? priority : "medium";
+    const todoId = Date.now().toString();
 
-    const todos = getTodos();
+    const pool = getPool();
+    await pool.query(
+      `INSERT INTO todos (id, user_id, text, priority, completed, created_at)
+       VALUES (?, ?, ?, ?, false, NOW())`,
+      [todoId, req.user.id, text.trim(), chosenPriority]
+    );
+
     const newTodo = {
-      id: Date.now().toString(),
+      id: todoId,
       userId: req.user.id,
       text: text.trim(),
       priority: chosenPriority,
@@ -589,10 +626,7 @@ app.post("/api/todos", authenticateToken, (req, res) => {
       createdAt: new Date().toISOString(),
     };
 
-    todos.push(newTodo);
-    saveTodos(todos);
-
-    console.log(`[TODO] Task created by ${req.user.username}: "${newTodo.text}"`);
+    console.log(`[MYSQL TODO] Task created by ${req.user.username}: "${newTodo.text}"`);
 
     return res.status(201).json({
       success: true,
@@ -606,44 +640,60 @@ app.post("/api/todos", authenticateToken, (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 10. ROUTE: Update Todo (toggle complete, edit text or priority)
+// 10. ROUTE: Update Todo in MySQL (toggle complete, edit text or priority)
 // -------------------------------------------------------------
-app.put("/api/todos/:id", authenticateToken, (req, res) => {
+app.put("/api/todos/:id", authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { text, priority, completed } = req.body;
 
-    const todos = getTodos();
-    const todoIndex = todos.findIndex(
-      (t) => t.id === id && t.userId === req.user.id
+    const pool = getPool();
+    const [existing] = await pool.query(
+      "SELECT * FROM todos WHERE id = ? AND user_id = ? LIMIT 1",
+      [id, req.user.id]
     );
 
-    if (todoIndex === -1) {
+    if (existing.length === 0) {
       return res.status(404).json({
         success: false,
         message: "ስራው አልተገኘም (Task not found).",
       });
     }
 
+    const currentTodo = existing[0];
+    let updatedText = currentTodo.text;
+    let updatedPriority = currentTodo.priority;
+    let updatedCompleted = currentTodo.completed;
+
     if (text !== undefined && text.trim()) {
-      todos[todoIndex].text = text.trim();
+      updatedText = text.trim();
     }
     if (priority !== undefined) {
       const validPriorities = ["low", "medium", "high"];
       if (validPriorities.includes(priority)) {
-        todos[todoIndex].priority = priority;
+        updatedPriority = priority;
       }
     }
     if (completed !== undefined) {
-      todos[todoIndex].completed = Boolean(completed);
+      updatedCompleted = Boolean(completed);
     }
 
-    saveTodos(todos);
+    await pool.query(
+      "UPDATE todos SET text = ?, priority = ?, completed = ? WHERE id = ? AND user_id = ?",
+      [updatedText, updatedPriority, updatedCompleted, id, req.user.id]
+    );
 
     return res.status(200).json({
       success: true,
       message: "ስራው ተሻሽሏል (Task updated successfully).",
-      todo: todos[todoIndex],
+      todo: {
+        id,
+        userId: req.user.id,
+        text: updatedText,
+        priority: updatedPriority,
+        completed: Boolean(updatedCompleted),
+        createdAt: currentTodo.created_at,
+      },
     });
   } catch (error) {
     console.error("Update Todo Error:", error);
@@ -652,26 +702,24 @@ app.put("/api/todos/:id", authenticateToken, (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 11. ROUTE: Delete Todo
+// 11. ROUTE: Delete Todo in MySQL
 // -------------------------------------------------------------
-app.delete("/api/todos/:id", authenticateToken, (req, res) => {
+app.delete("/api/todos/:id", authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
+    const pool = getPool();
 
-    const todos = getTodos();
-    const initialLength = todos.length;
-    const filteredTodos = todos.filter(
-      (t) => !(t.id === id && t.userId === req.user.id)
+    const [result] = await pool.query(
+      "DELETE FROM todos WHERE id = ? AND user_id = ?",
+      [id, req.user.id]
     );
 
-    if (filteredTodos.length === initialLength) {
+    if (result.affectedRows === 0) {
       return res.status(404).json({
         success: false,
         message: "ስራው አልተገኘም (Task not found).",
       });
     }
-
-    saveTodos(filteredTodos);
 
     return res.status(200).json({
       success: true,
@@ -683,11 +731,23 @@ app.delete("/api/todos/:id", authenticateToken, (req, res) => {
   }
 });
 
-// Start Express Server
-app.listen(PORT, () => {
-  console.log(`\n===========================================`);
-  console.log(`🚀 Server is running on: http://localhost:${PORT}`);
-  console.log(`📁 Frontend served from: ${__dirname}`);
-  console.log(`🔐 JWT Auth & OTP Reset APIs Enabled`);
-  console.log(`===========================================\n`);
-});
+// Start Express Server after MySQL initialization
+async function startServer() {
+  try {
+    await initDatabase();
+
+    app.listen(PORT, () => {
+      console.log(`\n===========================================`);
+      console.log(`🚀 Server is running on: http://localhost:${PORT}`);
+      console.log(`🐬 Database: MySQL / MariaDB (Connected & Ready)`);
+      console.log(`📁 Frontend served from: ${__dirname}`);
+      console.log(`🔐 JWT Auth & OTP Reset APIs Enabled`);
+      console.log(`===========================================\n`);
+    });
+  } catch (error) {
+    console.error("❌ Failed to start server:", error.message);
+    process.exit(1);
+  }
+}
+
+startServer();
